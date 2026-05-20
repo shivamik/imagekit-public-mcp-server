@@ -2,6 +2,118 @@
 
 A Python MCP (Model Context Protocol) server that exposes ImageKit's documentation search and transformation builder as tools. Deployable to AWS Lambda via SAM.
 
+## Installation
+
+### Quick Install (Recommended)
+
+Run the interactive installer — it auto-detects your client and configures everything:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/shivamik/imagekit-public-mcp-server/refs/heads/main/scripts/install.py | python3
+```
+
+The installer supports VS Code, Codex, Claude Code, Claude Desktop, Windsurf, and Cursor.
+
+### Manual Configuration
+
+#### Hosted (SSE) — No local install needed
+
+Add the following to your MCP client config:
+
+**VS Code** (`mcp.json`):
+```json
+{
+  "servers": {
+    "imagekit-mcp-server": {
+      "type": "sse",
+      "url": "https://xb2htiyjp4zzt72bf3j5kevxca0kdswg.lambda-url.us-east-1.on.aws/mcp"
+    }
+  }
+}
+```
+
+**Cursor / Claude Desktop / Windsurf** (`mcpServers`):
+```json
+{
+  "mcpServers": {
+    "imagekit-mcp-server": {
+      "type": "sse",
+      "url": "https://xb2htiyjp4zzt72bf3j5kevxca0kdswg.lambda-url.us-east-1.on.aws/mcp"
+    }
+  }
+}
+```
+
+> **Note:** Windsurf uses `"serverUrl"` instead of `"url"`.
+
+**Codex** (`~/.codex/config.toml`):
+```toml
+[mcp_servers.imagekit-mcp-server]
+url = "https://xb2htiyjp4zzt72bf3j5kevxca0kdswg.lambda-url.us-east-1.on.aws/mcp"
+```
+
+**Claude Code** (CLI):
+```bash
+claude mcp add --transport sse imagekit-mcp-server https://xb2htiyjp4zzt72bf3j5kevxca0kdswg.lambda-url.us-east-1.on.aws/mcp
+```
+
+#### Local (stdio) — Runs on your machine
+
+Requires `uv` / `uvx` (installed automatically by the interactive installer).
+
+**VS Code** (`mcp.json`):
+```json
+{
+  "servers": {
+    "imagekit-mcp-server": {
+      "command": "uvx",
+      "args": ["imagekit-mcp-server", "--stdio"]
+    }
+  }
+}
+```
+
+**Cursor / Claude Desktop / Windsurf** (`mcpServers`):
+```json
+{
+  "mcpServers": {
+    "imagekit-mcp-server": {
+      "command": "uvx",
+      "args": ["imagekit-mcp-server", "--stdio"]
+    }
+  }
+}
+```
+
+**Codex** (`~/.codex/config.toml`):
+```toml
+[mcp_servers.imagekit-mcp-server]
+command = "uvx"
+args = ["imagekit-mcp-server", "--stdio"]
+```
+
+**Claude Code** (CLI):
+```bash
+claude mcp add-json --scope user imagekit-mcp-server '{"type":"stdio","command":"uvx","args":["imagekit-mcp-server","--stdio"]}'
+```
+
+## Skills
+
+The installer also sets up **agent skills** — packaged instructions that help your AI assistant use ImageKit tools more effectively.
+
+Skills are installed to:
+- **Global:** `~/.agents/skills/` (available across all projects)
+- **Local:** `./.agents/skills/` (project-scoped)
+
+### Included Skills
+
+| Skill | Description |
+|-------|-------------|
+| `documentation-search` | Teaches the agent how to craft effective queries and select the right sources when searching ImageKit documentation |
+| `transformation-builder` | Teaches the agent how to identify the correct ImageKit capability and build precise transformation URLs |
+
+Skills use progressive disclosure — the agent loads full instructions only when it decides to use a skill, keeping context efficient.
+
 ## Tools
 
 ### `search_docs`
@@ -18,123 +130,3 @@ Build ImageKit image/video transformation URLs from natural language description
 - `query` (required): Natural language description (e.g., "resize to 300x200 and add blur")
 - `src` (optional): Source ImageKit URL to apply transformations to
 - `fetch_url_to_check` (optional, default: true): Verify the generated URL works
-
-## Prerequisites
-
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/) (Python package manager)
-- AWS CLI + SAM CLI (for deployment)
-- Docker (for SAM build)
-
-## Local Development
-
-```bash
-# Install dependencies
-uv sync
-
-# Copy and configure environment
-cp .env.example .env
-
-# Run the server locally (port 8000)
-uv run python -m src.server
-
-# Run tests
-uv run pytest
-
-# Lint
-uv run ruff check src/ tests/
-```
-
-The MCP server will be available at:
-- SSE endpoint: `http://localhost:8000/sse`
-- Messages endpoint: `http://localhost:8000/messages/`
-- Health check: `http://localhost:8000/health`
-
-## Deployment (AWS SAM)
-
-```bash
-# First time (guided setup)
-./scripts/deploy.sh --guided
-
-# Subsequent deploys
-./scripts/deploy.sh
-```
-
-This deploys a Lambda function with:
-- Lambda Web Adapter layer for SSE streaming
-- Function URL (no API Gateway needed)
-- `RESPONSE_STREAM` invoke mode for real-time streaming
-
-## Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `IMAGEKIT_API_BASE_URL` | `https://imagekit-public-mcp-tools.stlmcp.com` | Upstream API base URL |
-| `IMAGEKIT_API_HOST` | `stage-ik-agent-service.imagekit.io` | Host header for upstream |
-| `MCP_SERVER_NAME` | `imagekit-mcp-server` | Server name in MCP protocol |
-| `MCP_SERVER_VERSION` | `1.0.0` | Server version |
-| `LOG_LEVEL` | `INFO` | Logging level |
-
-## MCP Client Configuration
-
-### Claude Desktop
-
-Add to `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "imagekit": {
-      "url": "https://<your-function-url>/sse"
-    }
-  }
-}
-```
-
-### Cursor
-
-Add to MCP settings:
-
-```json
-{
-  "mcpServers": {
-    "imagekit": {
-      "url": "https://<your-function-url>/sse"
-    }
-  }
-}
-```
-
-### Local (stdio via uv)
-
-```json
-{
-  "mcpServers": {
-    "imagekit": {
-      "command": "uv",
-      "args": ["run", "python", "-m", "src.server"],
-      "cwd": "/path/to/this/project"
-    }
-  }
-}
-```
-
-## Project Structure
-
-```
-├── src/
-│   ├── __init__.py
-│   ├── server.py           # MCP server + Starlette ASGI app
-│   ├── client.py           # Async HTTP client for upstream API
-│   ├── config.py           # Environment variable configuration
-│   └── lambda_handler.py   # Lambda entry point (uvicorn)
-├── tests/
-├── scripts/
-│   └── deploy.sh           # One-command SAM deployment
-├── template.yaml           # AWS SAM template
-├── samconfig.toml          # SAM deployment defaults
-├── Dockerfile              # Lambda container image
-├── pyproject.toml          # Project config + dependencies (uv)
-├── .env.example            # Environment variable reference
-└── openapi.json            # Upstream API spec (reference)
-```
