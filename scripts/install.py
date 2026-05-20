@@ -16,6 +16,34 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from urllib.request import urlopen
+from urllib.error import URLError
+
+# ─── TTY Input ───────────────────────────────────────────────────────────────
+# When piped via `curl | python3`, stdin is the pipe — not the terminal.
+# Reopen /dev/tty so interactive prompts still work.
+
+def _get_input_stream():
+    """Return a file object suitable for reading user input."""
+    if sys.stdin.isatty():
+        return sys.stdin
+    try:
+        return open("/dev/tty", "r")
+    except OSError:
+        return sys.stdin
+
+_INPUT_STREAM = _get_input_stream()
+
+
+def _input(prompt: str = "") -> str:
+    """Replacement for builtin input() that reads from the TTY."""
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    line = _INPUT_STREAM.readline()
+    if not line:
+        raise EOFError
+    return line.rstrip("\n")
+
 
 # ─── ANSI Colors ─────────────────────────────────────────────────────────────
 
@@ -40,8 +68,13 @@ class C:
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
-REPO_URL = "https://github.com/shivamik/imagekit-public-mcp-server.git"
-SKILLS_SUBDIR = "skills"
+REPO_RAW_BASE = (
+    "https://raw.githubusercontent.com/shivamik/imagekit-public-mcp-server/refs/heads/main"
+)
+SKILLS = [
+    "documentation-search",
+    "transformation-builder",
+]
 
 # Resolve paths relative to this script (works even when piped via curl)
 SCRIPT_DIR = Path(__file__).resolve().parent if "__file__" in dir() else Path.cwd()
@@ -91,7 +124,7 @@ def prompt_choice(title: str, options: list[str]) -> int:
 
     while True:
         try:
-            raw = input(f"  {C.DIM}Enter choice [1-{len(options)}]:{C.RESET} ").strip()
+            raw = _input(f"  {C.DIM}Enter choice [1-{len(options)}]:{C.RESET} ").strip()
             idx = int(raw)
             if 1 <= idx <= len(options):
                 print()
@@ -104,7 +137,7 @@ def prompt_choice(title: str, options: list[str]) -> int:
 def prompt_confirm(msg: str, default: bool = False) -> bool:
     hint = "Y/n" if default else "y/N"
     try:
-        raw = input(f"  {msg} [{hint}]: ").strip().lower()
+        raw = _input(f"  {msg} [{hint}]: ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         return default
     if not raw:
@@ -201,24 +234,28 @@ def get_config_path(client_key: str) -> str | None:
 # ─── Installation Steps ──────────────────────────────────────────────────────
 
 
-def install_skills(tmp_dir: Path, skills_install_dir: Path):
-    """Copy skills from cloned repo to target directory."""
-    src = tmp_dir / SKILLS_SUBDIR
-    if not src.is_dir():
-        error(f"Skills directory not found in repo at '{SKILLS_SUBDIR}'")
+def fetch_raw(path: str) -> str:
+    """Fetch a file from the GitHub repo via raw URL."""
+    url = f"{REPO_RAW_BASE}/{path}"
+    try:
+        with urlopen(url) as resp:
+            return resp.read().decode()
+    except URLError as e:
+        error(f"Failed to fetch {url}: {e}")
+        return ""  # unreachable
 
+
+def install_skills(skills_install_dir: Path):
+    """Download skills from GitHub and install to target directory."""
     skills_install_dir.mkdir(parents=True, exist_ok=True)
 
-    for skill_path in sorted(src.iterdir()):
-        if not skill_path.is_dir():
-            continue
-        target = skills_install_dir / skill_path.name
-        if target.exists():
-            shutil.rmtree(target)
-            print(f"  {C.YELLOW}↻{C.RESET} Updated: {C.BOLD}{skill_path.name}{C.RESET}")
-        else:
-            print(f"  {C.GREEN}✓{C.RESET} Installed: {C.BOLD}{skill_path.name}{C.RESET}")
-        shutil.copytree(skill_path, target)
+    for skill_name in SKILLS:
+        content = fetch_raw(f"skills/{skill_name}/SKILL.md")
+        target = skills_install_dir / skill_name
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "SKILL.md").write_text(content)
+        if (target / "SKILL.md").exists():
+            print(f"  {C.GREEN}✓{C.RESET} Installed: {C.BOLD}{skill_name}{C.RESET}")
 
     success(f"Skills installed to: {skills_install_dir}")
 
@@ -428,78 +465,67 @@ def main():
     )
     skills_dir = global_dir if scope_idx == 0 else local_dir
 
-    # ── Step 4: Clone repo & install skills ──
+    # ── Step 4: Download & install skills ──
     step("Fetching skills from repository...")
-    tmp_dir = Path(tempfile.mkdtemp())
-    try:
-        subprocess.run(
-            ["git", "clone", "--depth", "1", "--quiet", REPO_URL, str(tmp_dir)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        install_skills(tmp_dir, skills_dir)
+    install_skills(skills_dir)
 
-        # ── Step 5: Read config ──
-        step("Reading server configuration...")
-        # Try config in cloned repo first, then local project
-        config_candidates = [tmp_dir / "config.yaml", CONFIG_FILE]
-        config_path = None
-        for cp in config_candidates:
-            if cp.exists():
-                config_path = cp
-                break
+    # ── Step 5: Read config ──
+    step("Reading server configuration...")
+    # Try local config first, then fetch from remote
+    config_path = None
+    if CONFIG_FILE.exists():
+        config_path = CONFIG_FILE
+    else:
+        # Download config.yaml to a temp file
+        config_content = fetch_raw("config.yaml")
+        tmp_config = Path(tempfile.mktemp(suffix=".yaml"))
+        tmp_config.write_text(config_content)
+        config_path = tmp_config
 
-        if not config_path:
-            error("config.yaml not found in repository or project root")
+    server_name = read_yaml_value(config_path, "MCP_SERVER_NAME") or "imagekit-mcp-server"
+    info(f"Server name: {server_name}")
 
-        server_name = read_yaml_value(config_path, "MCP_SERVER_NAME") or "imagekit-mcp-server"
-        info(f"Server name: {server_name}")
+    mcp_url = ""
+    command = ""
+    args: list[str] = []
 
-        mcp_url = ""
-        command = ""
-        args: list[str] = []
-
-        if server_type == "hosted":
-            mcp_url = read_yaml_value(config_path, "MCP_HOSTED_URL")
-            if not mcp_url:
-                error("MCP_HOSTED_URL not set in config.yaml")
-            info(f"URL: {mcp_url}")
+    if server_type == "hosted":
+        mcp_url = read_yaml_value(config_path, "MCP_HOSTED_URL")
+        if not mcp_url:
+            error("MCP_HOSTED_URL not set in config.yaml")
+        info(f"URL: {mcp_url}")
+    else:
+        step("Setting up local server...")
+        uv_bin = ensure_uv()
+        uvx_bin = ensure_uvx(uv_bin)
+        if uvx_bin:
+            command, args = uvx_bin, [server_name, "--stdio"]
         else:
-            step("Setting up local server...")
-            uv_bin = ensure_uv()
-            uvx_bin = ensure_uvx(uv_bin)
-            if uvx_bin:
-                command, args = uvx_bin, [server_name, "--stdio"]
-            else:
-                # Fallback: use uv tool run
-                command, args = uv_bin, ["tool", "run", server_name, "--stdio"]
-            success(f"Will use: {command} {' '.join(args)}")
+            # Fallback: use uv tool run
+            command, args = uv_bin, ["tool", "run", server_name, "--stdio"]
+        success(f"Will use: {command} {' '.join(args)}")
 
-        # ── Step 6: Configure MCP client ──
-        step(f"Configuring {client['name']}...")
+    # ── Step 6: Configure MCP client ──
+    step(f"Configuring {client['name']}...")
 
-        cfg_path = get_config_path(client["key"])
+    cfg_path = get_config_path(client["key"])
 
-        if cfg_path == "__claude_cli__":
-            configure_claude_code(server_name, server_type, mcp_url, command, args)
-        elif client["key"] == "codex" and cfg_path:
-            write_codex_toml_config(cfg_path, server_name, server_type, mcp_url, command, args)
-        elif cfg_path:
-            wrapper_key = "servers" if client["key"] == "vscode" else "mcpServers"
-            entry = build_server_entry(client["key"], server_type, mcp_url, command, args)
-            write_json_config(cfg_path, wrapper_key, server_name, entry)
-        else:
-            # "Other" — print config for user to copy
-            entry = build_server_entry(client["key"], server_type, mcp_url, command, args)
-            full = {server_name: entry}
-            print()
-            print(f"  {C.DIM}Add this to your MCP client config:{C.RESET}")
-            print()
-            print(f"  {json.dumps(full, indent=2)}")
-
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    if cfg_path == "__claude_cli__":
+        configure_claude_code(server_name, server_type, mcp_url, command, args)
+    elif client["key"] == "codex" and cfg_path:
+        write_codex_toml_config(cfg_path, server_name, server_type, mcp_url, command, args)
+    elif cfg_path:
+        wrapper_key = "servers" if client["key"] == "vscode" else "mcpServers"
+        entry = build_server_entry(client["key"], server_type, mcp_url, command, args)
+        write_json_config(cfg_path, wrapper_key, server_name, entry)
+    else:
+        # "Other" — print config for user to copy
+        entry = build_server_entry(client["key"], server_type, mcp_url, command, args)
+        full = {server_name: entry}
+        print()
+        print(f"  {C.DIM}Add this to your MCP client config:{C.RESET}")
+        print()
+        print(f"  {json.dumps(full, indent=2)}")
 
     # ── Done ──
     print(f"""
