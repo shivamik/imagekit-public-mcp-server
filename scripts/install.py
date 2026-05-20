@@ -23,6 +23,7 @@ from urllib.error import URLError
 # When piped via `curl | python3`, stdin is the pipe — not the terminal.
 # Reopen /dev/tty so interactive prompts still work.
 
+
 def _get_input_stream():
     """Return a file object suitable for reading user input."""
     if sys.stdin.isatty():
@@ -31,6 +32,7 @@ def _get_input_stream():
         return open("/dev/tty", "r")
     except OSError:
         return sys.stdin
+
 
 _INPUT_STREAM = _get_input_stream()
 
