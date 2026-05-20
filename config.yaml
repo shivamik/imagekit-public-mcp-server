@@ -1,5 +1,4 @@
-MCP_HOSTED_URL: https://xb2htiyjp4zzt72bf3j5kevxca0kdswg.lambda-url.us-east-1.on.aws/mcp
-IMAGEKIT_API_BASE_URL: http://52.221.57.134/
+IMAGEKIT_API_BASE_URL: http://localhost:8081/mcp
 IMAGEKIT_API_HOST: stage-ik-agent-service.imagekit.io
 MCP_SERVER_NAME: imagekit-mcp-server
 MCP_SERVER_VERSION: 1.0.0

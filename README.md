@@ -1,136 +1,53 @@
-# ImageKit Public MCP Server
+# ImageKit MCP Server — Installer
 
-A Python MCP (Model Context Protocol) server that exposes ImageKit's documentation search and transformation builder as tools. Deployable to AWS Lambda via SAM.
+One script to install the ImageKit MCP server and agent skills into any supported client.
 
-## Installation
-
-### Quick Install (Recommended)
-
-Run the interactive installer — it auto-detects your client and configures everything:
+## Quick Start
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/shivamik/imagekit-public-mcp-server/refs/heads/main/scripts/install.py | python3
 ```
 
-The installer supports VS Code, Codex, Claude Code, Claude Desktop, Windsurf, and Cursor.
+The installer will:
+1. Ask which MCP client you use (VS Code, Codex, Claude Code, Claude Desktop, Windsurf, Cursor)
+2. Install agent skills to your global skills directory
+3. Find `npx` on your machine and configure the MCP server using `mcp-remote`
 
-### Manual Configuration
+**Requirements:** Python 3.7+ and Node.js (npm/npx).
 
-#### Hosted (SSE) — No local install needed
+## What Gets Configured
 
-Your MCP client connects to ImageKit's remote server over HTTPS using Server-Sent Events (SSE). The server is hosted on AWS Lambda — nothing runs on your machine. Your client sends tool requests to the URL, and the server streams responses back in real-time. No installation or dependencies required.
+The installer writes a server entry like this into your client's MCP config:
 
-Add the following to your MCP client config:
-
-**VS Code** (`mcp.json`):
 ```json
 {
-  "servers": {
-    "imagekit-mcp-server": {
-      "type": "sse",
-      "url": "https://xb2htiyjp4zzt72bf3j5kevxca0kdswg.lambda-url.us-east-1.on.aws/mcp"
+  "imagekit-mcp-server": {
+    "command": "/path/to/npx",
+    "args": ["-y", "mcp-remote@latest", "http://your-mcp-url/mcp"],
+    "env": {
+      "PATH": "/path/to/node/bin:/usr/bin:/bin"
     }
   }
 }
 ```
 
-**Cursor / Claude Desktop / Windsurf** (`mcpServers`):
-```json
-{
-  "mcpServers": {
-    "imagekit-mcp-server": {
-      "type": "sse",
-      "url": "https://xb2htiyjp4zzt72bf3j5kevxca0kdswg.lambda-url.us-east-1.on.aws/mcp"
-    }
-  }
-}
-```
-
-> **Note:** Windsurf uses `"serverUrl"` instead of `"url"`.
-
-**Codex** (`~/.codex/config.toml`):
-```toml
-[mcp_servers.imagekit-mcp-server]
-url = "https://xb2htiyjp4zzt72bf3j5kevxca0kdswg.lambda-url.us-east-1.on.aws/mcp"
-```
-
-**Claude Code** (CLI):
-```bash
-claude mcp add --transport sse imagekit-mcp-server https://xb2htiyjp4zzt72bf3j5kevxca0kdswg.lambda-url.us-east-1.on.aws/mcp
-```
-
-#### Local (stdio) — Runs on your machine
-
-Your MCP client spawns the server as a local subprocess and communicates over stdin/stdout. The server process runs on your machine but still makes network calls to ImageKit APIs for search and transformation. This avoids the SSE network hop to AWS and gives slightly faster responses.
-
-Requires `uv` / `uvx` (installed automatically by the interactive installer).
-
-**VS Code** (`mcp.json`):
-```json
-{
-  "servers": {
-    "imagekit-mcp-server": {
-      "command": "uvx",
-      "args": ["imagekit-mcp-server", "--stdio"]
-    }
-  }
-}
-```
-
-**Cursor / Claude Desktop / Windsurf** (`mcpServers`):
-```json
-{
-  "mcpServers": {
-    "imagekit-mcp-server": {
-      "command": "uvx",
-      "args": ["imagekit-mcp-server", "--stdio"]
-    }
-  }
-}
-```
-
-**Codex** (`~/.codex/config.toml`):
-```toml
-[mcp_servers.imagekit-mcp-server]
-command = "uvx"
-args = ["imagekit-mcp-server", "--stdio"]
-```
-
-**Claude Code** (CLI):
-```bash
-claude mcp add-json --scope user imagekit-mcp-server '{"type":"stdio","command":"uvx","args":["imagekit-mcp-server","--stdio"]}'
-```
+This uses `npx` + `mcp-remote` to connect to the ImageKit MCP server — no other runtime dependencies needed.
 
 ## Skills
 
-The installer also sets up **agent skills** — packaged instructions that help your AI assistant use ImageKit tools more effectively.
-
-Skills are installed to:
-- **Global:** `~/.agents/skills/` (available across all projects)
-- **Local:** `./.agents/skills/` (project-scoped)
-
-### Included Skills
+The installer sets up **agent skills** — packaged instructions that help your AI assistant use ImageKit tools more effectively.
 
 | Skill | Description |
 |-------|-------------|
-| `documentation-search` | Teaches the agent how to craft effective queries and select the right sources when searching ImageKit documentation |
-| `transformation-builder` | Teaches the agent how to identify the correct ImageKit capability and build precise transformation URLs |
+| `documentation-search` | Teaches the agent how to craft effective queries when searching ImageKit docs |
+| `transformation-builder` | Teaches the agent how to build precise ImageKit transformation URLs |
 
-Skills use progressive disclosure — the agent loads full instructions only when it decides to use a skill, keeping context efficient.
+Skills are installed globally (e.g. `~/.agents/skills/`) so they're available across all projects.
 
-## Tools
+## Tools Provided by the Server
 
 ### `search_docs`
 Search ImageKit documentation across guides, API references, SDK docs, and community content.
 
-**Parameters:**
-- `query` (required): Search query string
-- `sources` (optional): Filter by source — `imagekit_api_references`, `imagekit_community`, `imagekit_guides`, `imagekit_sdk`
-
 ### `transformation_builder`
 Build ImageKit image/video transformation URLs from natural language descriptions.
-
-**Parameters:**
-- `query` (required): Natural language description (e.g., "resize to 300x200 and add blur")
-- `src` (optional): Source ImageKit URL to apply transformations to
-- `fetch_url_to_check` (optional, default: true): Verify the generated URL works

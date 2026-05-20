@@ -70,9 +70,7 @@ class C:
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
-REPO_RAW_BASE = (
-    "https://raw.githubusercontent.com/shivamik/imagekit-public-mcp-server/refs/heads/main"
-)
+REPO_RAW_BASE = "https://raw.githubusercontent.com/shivamik/imagekit-public-mcp-server/refs/heads/main"
 SKILLS = [
     "documentation-search",
     "transformation-builder",
@@ -182,20 +180,19 @@ CLIENTS = [
 ]
 
 
-def get_skills_dir(client_key: str, scope: str) -> Path:
-    """Return the skills install path for a given client and scope (global/local)."""
+def get_skills_dir(client_key: str) -> Path:
+    """Return the global skills install path for a given client."""
     home = Path.home()
     dirs = {
-        "vscode": (home / ".agents" / "skills", Path.cwd() / ".agents" / "skills"),
-        "codex": (home / ".agents" / "skills", Path.cwd() / ".agents" / "skills"),
-        "cursor": (home / ".cursor" / "skills", Path.cwd() / ".cursor" / "skills"),
-        "claude": (home / ".claude" / "skills", Path.cwd() / ".claude" / "skills"),
-        "claude_desktop": (home / ".claude" / "skills", Path.cwd() / ".claude" / "skills"),
-        "windsurf": (home / ".agents" / "skills", Path.cwd() / ".agents" / "skills"),
-        "other": (home / ".agents" / "skills", Path.cwd() / ".agents" / "skills"),
+        "vscode": home / ".agents" / "skills",
+        "codex": home / ".agents" / "skills",
+        "cursor": home / ".cursor" / "skills",
+        "claude": home / ".claude" / "skills",
+        "claude_desktop": home / ".claude" / "skills",
+        "windsurf": home / ".agents" / "skills",
+        "other": home / ".agents" / "skills",
     }
-    global_dir, local_dir = dirs[client_key]
-    return global_dir if scope == "global" else local_dir
+    return dirs[client_key]
 
 
 def get_config_path(client_key: str) -> str | None:
@@ -205,7 +202,9 @@ def get_config_path(client_key: str) -> str | None:
 
     if client_key == "vscode":
         if system == "Darwin":
-            return str(home / "Library" / "Application Support" / "Code" / "User" / "mcp.json")
+            return str(
+                home / "Library" / "Application Support" / "Code" / "User" / "mcp.json"
+            )
         elif system == "Linux":
             return str(home / ".config" / "Code" / "User" / "mcp.json")
         else:
@@ -220,7 +219,11 @@ def get_config_path(client_key: str) -> str | None:
     elif client_key == "claude_desktop":
         if system == "Darwin":
             return str(
-                home / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+                home
+                / "Library"
+                / "Application Support"
+                / "Claude"
+                / "claude_desktop_config.json"
             )
         elif system == "Linux":
             return str(home / ".config" / "Claude" / "claude_desktop_config.json")
@@ -262,52 +265,35 @@ def install_skills(skills_install_dir: Path):
     success(f"Skills installed to: {skills_install_dir}")
 
 
-def ensure_uv() -> str:
-    """Ensure uv is available. Install if missing. Return path to binary."""
-    uv = which("uv")
-    if uv:
-        success(f"Found uv at: {uv}")
-        return uv
+def ensure_npx() -> str:
+    """Ensure npx is available. Return path to binary."""
+    npx = which("npx")
+    if npx:
+        success(f"Found npx at: {npx}")
+        return npx
 
-    warn("uv not found. Installing...")
-    subprocess.run(
-        ["sh", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"],
-        check=True,
+    # Check common nvm locations
+    home = Path.home()
+    nvm_dir = home / ".nvm" / "versions" / "node"
+    if nvm_dir.exists():
+        # Find the latest node version
+        versions = sorted(nvm_dir.iterdir(), reverse=True)
+        for ver in versions:
+            candidate = ver / "bin" / "npx"
+            if candidate.is_file():
+                success(f"Found npx at: {candidate}")
+                return str(candidate)
+
+    error(
+        "npx not found. Install Node.js (https://nodejs.org) or nvm "
+        "(https://github.com/nvm-sh/nvm) and retry."
     )
-
-    # Check common locations
-    for candidate in [
-        which("uv"),
-        str(Path.home() / ".local" / "bin" / "uv"),
-        str(Path.home() / ".cargo" / "bin" / "uv"),
-    ]:
-        if candidate and Path(candidate).is_file():
-            success(f"Installed uv at: {candidate}")
-            return candidate
-
-    error("uv installed but binary not found. Add ~/.local/bin to PATH and retry.")
     return ""  # unreachable
 
 
-def ensure_uvx(uv_bin: str) -> str:
-    """Ensure uvx is available. Return path to uvx binary."""
-    uvx_bin = str(Path(uv_bin).parent / "uvx")
-    if Path(uvx_bin).is_file():
-        success(f"Found uvx at: {uvx_bin}")
-        return uvx_bin
-
-    # uvx not found as sibling, try PATH
-    uvx_path = which("uvx")
-    if uvx_path:
-        success(f"Found uvx at: {uvx_path}")
-        return uvx_path
-
-    # uvx should come bundled with uv, but if missing return empty
-    warn("uvx not found (expected alongside uv)")
-    return ""
-
-
-def write_json_config(config_path: str, wrapper_key: str, server_name: str, server_entry: dict):
+def write_json_config(
+    config_path: str, wrapper_key: str, server_name: str, server_entry: dict
+):
     """Merge server entry into existing JSON config (or create new)."""
     path = Path(config_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -331,10 +317,8 @@ def write_json_config(config_path: str, wrapper_key: str, server_name: str, serv
 def write_codex_toml_config(
     config_path: str,
     server_name: str,
-    server_type: str,
-    mcp_url: str = "",
-    command: str = "",
-    args: list[str] | None = None,
+    command: str,
+    args: list[str],
 ):
     """Add MCP server entry to Codex config.toml (minimal TOML writer)."""
     path = Path(config_path)
@@ -360,25 +344,16 @@ def write_codex_toml_config(
 
     # Build new section
     section_lines = [f"\n{section_header}"]
-    if server_type == "hosted":
-        section_lines.append(f'url = "{mcp_url}"')
-    else:
-        section_lines.append(f'command = "{command}"')
-        args_str = json.dumps(args or [])
-        section_lines.append(f"args = {args_str}")
+    section_lines.append(f'command = "{command}"')
+    args_str = json.dumps(args)
+    section_lines.append(f"args = {args_str}")
 
     existing = existing.rstrip() + "\n" + "\n".join(section_lines) + "\n"
     path.write_text(existing)
     success(f"Config written: {config_path}")
 
 
-def configure_claude_code(
-    server_name: str,
-    server_type: str,
-    mcp_url: str = "",
-    command: str = "",
-    args: list[str] | None = None,
-):
+def configure_claude_code(server_name: str, command: str, args: list[str]):
     """Add MCP server via claude CLI."""
     claude = which("claude")
     if not claude:
@@ -388,42 +363,28 @@ def configure_claude_code(
         )
         print()
         print(f"  {C.DIM}Then run manually:{C.RESET}")
-        if server_type == "hosted":
-            print(f"    claude mcp add --transport sse {server_name} {mcp_url}")
-        else:
-            entry = json.dumps({"type": "stdio", "command": command, "args": args or []})
-            print(f"    claude mcp add-json {server_name} '{entry}'")
+        entry = json.dumps({"type": "stdio", "command": command, "args": args})
+        print(f"    claude mcp add-json {server_name} '{entry}'")
         return
 
-    if server_type == "hosted":
-        subprocess.run(
-            [claude, "mcp", "add", "--transport", "sse", server_name, mcp_url],
-            check=True,
-        )
-    else:
-        entry = json.dumps({"type": "stdio", "command": command, "args": args or []})
-        subprocess.run(
-            [claude, "mcp", "add-json", "--scope", "user", server_name, entry],
-            check=True,
-        )
+    entry = json.dumps({"type": "stdio", "command": command, "args": args})
+    subprocess.run(
+        [claude, "mcp", "add-json", "--scope", "user", server_name, entry],
+        check=True,
+    )
     success("MCP server added to Claude Code (user scope)")
 
 
-def build_server_entry(
-    client_key: str,
-    server_type: str,
-    mcp_url: str = "",
-    command: str = "",
-    args: list[str] | None = None,
-) -> dict:
+def build_server_entry(client_key: str, npx_bin: str, mcp_url: str) -> dict:
     """Build the JSON server entry for config files."""
-    if server_type == "hosted":
-        if client_key == "windsurf":
-            return {"type": "sse", "serverUrl": mcp_url}
-        else:
-            return {"type": "sse", "url": mcp_url}
-    else:
-        return {"command": command, "args": args or []}
+    npx_dir = str(Path(npx_bin).parent)
+    return {
+        "command": npx_bin,
+        "args": ["-y", "mcp-remote@latest", mcp_url],
+        "env": {
+            "PATH": f"{npx_dir}:/usr/bin:/bin",
+        },
+    }
 
 
 # ─── Main ────────────────────────────────────────────────────────────────────
@@ -439,39 +400,13 @@ def main():
     )
     client = CLIENTS[client_idx]
 
-    # ── Step 2: Server type ──
-    if client["key"] == "claude_desktop":
-        # Claude Desktop only supports stdio (local) servers
-        info("Claude Desktop only supports local (stdio) servers.")
-        server_type = "local"
-    else:
-        server_type_idx = prompt_choice(
-            "Which server type do you want to configure?",
-            [
-                f"Hosted (SSE){C.DIM} — uses remote URL, nothing to run locally{C.RESET}",
-                f"Local (stdio){C.DIM} — installs & runs the server on your machine{C.RESET}",
-            ],
-        )
-        server_type = "hosted" if server_type_idx == 0 else "local"
+    # ── Step 2: Install skills ──
+    skills_dir = get_skills_dir(client["key"])
 
-    # ── Step 3: Skills location ──
-    global_dir = get_skills_dir(client["key"], "global")
-    local_dir = get_skills_dir(client["key"], "local")
-
-    scope_idx = prompt_choice(
-        "Where should skills be installed?",
-        [
-            f"Global {C.DIM}({global_dir}){C.RESET}",
-            f"Local {C.DIM}({local_dir}){C.RESET}",
-        ],
-    )
-    skills_dir = global_dir if scope_idx == 0 else local_dir
-
-    # ── Step 4: Download & install skills ──
     step("Fetching skills from repository...")
     install_skills(skills_dir)
 
-    # ── Step 5: Read config ──
+    # ── Step 3: Read config ──
     step("Reading server configuration...")
     # Try local config first, then fetch from remote
     config_path = None
@@ -484,45 +419,40 @@ def main():
         tmp_config.write_text(config_content)
         config_path = tmp_config
 
-    server_name = read_yaml_value(config_path, "MCP_SERVER_NAME") or "imagekit-mcp-server"
+    server_name = (
+        read_yaml_value(config_path, "MCP_SERVER_NAME") or "imagekit-mcp-server"
+    )
+    mcp_url = read_yaml_value(config_path, "IMAGEKIT_API_BASE_URL")
+    if not mcp_url:
+        error("IMAGEKIT_API_BASE_URL not set in config.yaml")
+
     info(f"Server name: {server_name}")
+    info(f"MCP URL: {mcp_url}")
 
-    mcp_url = ""
-    command = ""
-    args: list[str] = []
+    # ── Step 4: Ensure npx is available ──
+    step("Checking for npx...")
+    npx_bin = ensure_npx()
+    npx_dir = str(Path(npx_bin).parent)
+    command = npx_bin
+    args = ["-y", "mcp-remote@latest", mcp_url]
+    success(f"Will use: {command} {' '.join(args)}")
 
-    if server_type == "hosted":
-        mcp_url = read_yaml_value(config_path, "MCP_HOSTED_URL")
-        if not mcp_url:
-            error("MCP_HOSTED_URL not set in config.yaml")
-        info(f"URL: {mcp_url}")
-    else:
-        step("Setting up local server...")
-        uv_bin = ensure_uv()
-        uvx_bin = ensure_uvx(uv_bin)
-        if uvx_bin:
-            command, args = uvx_bin, [server_name, "--stdio"]
-        else:
-            # Fallback: use uv tool run
-            command, args = uv_bin, ["tool", "run", server_name, "--stdio"]
-        success(f"Will use: {command} {' '.join(args)}")
-
-    # ── Step 6: Configure MCP client ──
+    # ── Step 5: Configure MCP client ──
     step(f"Configuring {client['name']}...")
 
     cfg_path = get_config_path(client["key"])
 
     if cfg_path == "__claude_cli__":
-        configure_claude_code(server_name, server_type, mcp_url, command, args)
+        configure_claude_code(server_name, command, args)
     elif client["key"] == "codex" and cfg_path:
-        write_codex_toml_config(cfg_path, server_name, server_type, mcp_url, command, args)
+        write_codex_toml_config(cfg_path, server_name, command, args)
     elif cfg_path:
         wrapper_key = "servers" if client["key"] == "vscode" else "mcpServers"
-        entry = build_server_entry(client["key"], server_type, mcp_url, command, args)
+        entry = build_server_entry(client["key"], npx_bin, mcp_url)
         write_json_config(cfg_path, wrapper_key, server_name, entry)
     else:
         # "Other" — print config for user to copy
-        entry = build_server_entry(client["key"], server_type, mcp_url, command, args)
+        entry = build_server_entry(client["key"], npx_bin, mcp_url)
         full = {server_name: entry}
         print()
         print(f"  {C.DIM}Add this to your MCP client config:{C.RESET}")
@@ -535,20 +465,13 @@ def main():
 ║              Installation Complete!                   ║
 ╠══════════════════════════════════════════════════════╣{C.RESET}
 {C.GREEN}║{C.RESET}  Client:  {C.BOLD}{client["name"]}{C.RESET}
-{C.GREEN}║{C.RESET}  Server:  {C.BOLD}{"Hosted (SSE)" if server_type == "hosted" else "Local (stdio)"}{C.RESET}
+{C.GREEN}║{C.RESET}  Server:  {C.BOLD}{command} {" ".join(args)}{C.RESET}
 {C.GREEN}║{C.RESET}  Skills:  {C.BOLD}{skills_dir}{C.RESET}
 {C.GREEN}║{C.RESET}  Config:  {C.BOLD}{cfg_path or "printed above"}{C.RESET}
 {C.GREEN}{C.BOLD}╚══════════════════════════════════════════════════════╝{C.RESET}
 """)
 
-    # ── Post-install guidance ──
-    if server_type == "hosted":
-        print(f"  {C.DIM}Your server is hosted — no local startup needed.{C.RESET}")
-        print(f"  Restart {C.BOLD}{client['name']}{C.RESET} to connect.\n")
-    else:
-        start_cmd = command if not args else f"{command} {' '.join(args)}"
-        print(f"  {C.DIM}Server command: {start_cmd}{C.RESET}")
-        print(f"  Restart {C.BOLD}{client['name']}{C.RESET} to connect.\n")
+    print(f"  Restart {C.BOLD}{client['name']}{C.RESET} to connect.\n")
 
 
 if __name__ == "__main__":
