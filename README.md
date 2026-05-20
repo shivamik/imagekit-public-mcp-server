@@ -18,6 +18,8 @@ The installer supports VS Code, Codex, Claude Code, Claude Desktop, Windsurf, an
 
 #### Hosted (SSE) — No local install needed
 
+Your MCP client connects to ImageKit's remote server over HTTPS using Server-Sent Events (SSE). The server is hosted on AWS Lambda — nothing runs on your machine. Your client sends tool requests to the URL, and the server streams responses back in real-time. No installation or dependencies required.
+
 Add the following to your MCP client config:
 
 **VS Code** (`mcp.json`):
@@ -58,6 +60,8 @@ claude mcp add --transport sse imagekit-mcp-server https://xb2htiyjp4zzt72bf3j5k
 ```
 
 #### Local (stdio) — Runs on your machine
+
+Your MCP client spawns the server as a local subprocess and communicates over stdin/stdout. The server process runs on your machine but still makes network calls to ImageKit APIs for search and transformation. This avoids the SSE network hop to AWS and gives slightly faster responses.
 
 Requires `uv` / `uvx` (installed automatically by the interactive installer).
 
