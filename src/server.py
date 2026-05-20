@@ -88,7 +88,7 @@ async def transformation_builder(
 app = mcp.streamable_http_app()
 
 
-if __name__ == "__main__":
+def main():
     import sys
 
     if "--stdio" in sys.argv:
@@ -97,3 +97,7 @@ if __name__ == "__main__":
         import uvicorn
 
         uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+if __name__ == "__main__":
+    main()

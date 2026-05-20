@@ -1,14 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "imagekit-mcp-server"
 version = "1.0.0"
 description = "ImageKit Public MCP Server - exposes search_docs and transformation_builder tools"
 requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    { name = "ImageKit", email = "support@imagekit.io" }
+]
+readme = "README.md"
+keywords = ["imagekit", "mcp", "model-context-protocol", "image-processing"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
 dependencies = [
     "mcp>=1.0.0",
     "httpx>=0.27",
     "uvicorn>=0.30",
-    "mcp[cli]"
+    "mcp[cli]",
+    "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/imagekit-developer/imagekit-mcp-server"
+Repository = "https://github.com/imagekit-developer/imagekit-mcp-server"
+Issues = "https://github.com/imagekit-developer/imagekit-mcp-server/issues"
+
+[project.scripts]
+imagekit-mcp-server = "src.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
 
 [dependency-groups]
 dev = [
